@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HMI Enchapadora V2.0.0</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;500&display=swap"
+        rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+
+    <style>
+        body {
+            background-color: #0d0d0d;
+            color: #e0e0e0;
+            font-family: 'Roboto', sans-serif;
+            overflow: hidden;
+            /* Evitar scroll en pantalla de 7" */
+        }
+
+        .header-panel {
+            background: linear-gradient(180deg, #1a1a1a 0%, #000 100%);
+            border-bottom: 2px solid #333;
+            padding: 10px;
+        }
+
+        .status-display {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5rem;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff0055;
+        }
+
+        .card-industrial {
+            background: #151515;
+            border: 1px solid #333;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            padding: 15px;
+        }
+
+        .btn-toggle {
+            width: 100%;
+            padding: 15px;
+            font-weight: bold;
+            text-transform: uppercase;
+            border-radius: 10px;
+            transition: 0.3s;
+        }
+
+        /* Colores de estado */
+        .bg-active {
+            background-color: #00ff00 !important;
+            color: #000;
+            box-shadow: 0 0 15px #00ff0088;
+        }
+
+        .bg-inactive {
+            background-color: #222 !important;
+            color: #555;
+            border: 1px solid #444;
+        }
+
+        .bg-danger-flash {
+            background-color: #ff0000;
+            color: white;
+            animation: flash 1s infinite;
+        }
+
+        @keyframes flash {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .temp-display {
+            font-size: 3rem;
+            font-family: 'Orbitron', sans-serif;
+            text-align: center;
+        }
+
+        .indicator-led {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container-fluid">
+        <div class="row header-panel align-items-center">
+            <div class="col-4">
+                <span class="text-muted small">SISTEMA ENCHAPADORA V2.0.0</span><br>
+                <span id="txt-mando" class="badge bg-inactive">TENSIÓN DE MANDO OFF</span>
+            </div>
+            <div class="col-4 text-center">
+                <div id="reloj" class="status-display">00:00:00</div>
+            </div>
+            <div class="col-4 text-end">
+                <button id="btn-mando" class="btn btn-outline-success" onclick="toggleMando()">CONECTAR MANDO</button>
+            </div>
+        </div>
+
+        <div id="banner-emergencia" class="row bg-danger-flash d-none py-2 text-center fw-bold">
+            <span id="msg-error">¡PARO DE EMERGENCIA ACTIVADO!</span>
+            <button class="btn btn-sm btn-light ms-3" onclick="resetEmergencia()"
+                style="width: auto; display: inline-block;">REARMAR</button>
+        </div>
+
+        <div class="row mt-3">
+            <div class="col-7">
+                <div class="row g-2">
+                    <div class="col-6">
+                        <button id="btn-cadena" class="btn btn-toggle bg-inactive" onclick="comando('cadena')">Cadena
+                            Avance</button>
+                    </div>
+                    <div class="col-6">
+                        <button id="btn-fresador" class="btn btn-toggle bg-inactive" onclick="comando('fresador')">Grupo
+                            Fresa</button>
+                    </div>
+                    <div class="col-6">
+                        <button id="btn-alimentador" class="btn btn-toggle bg-inactive"
+                            onclick="comando('alimentador')">Aliment/Guilloti</button>
+                    </div>
+                    <div class="col-6">
+                        <button id="btn-retestador" class="btn btn-toggle bg-inactive"
+                            onclick="comando('retestador')">Retestador</button>
+                    </div>
+                    <div class="col-6">
+                        <button id="btn-refilador" class="btn btn-toggle bg-inactive"
+                            onclick="comando('refilador')">Refilador</button>
+                    </div>
+                    <div class="col-6">
+                        <button id="btn-calefaccion" class="btn btn-toggle bg-inactive"
+                            onclick="comando('calefaccion')">Calefacción</button>
+                    </div>
+                </div>
+
+                <div class="card-industrial mt-3">
+                    <label class="text-muted small">POSICIÓN PIEZA (ENCODER)</label>
+                    <div class="progress mt-1" style="height: 25px; background: #000;">
+                        <div id="progreso-pieza"
+                            class="progress-bar bg-success progress-bar-striped progress-bar-animated"
+                            style="width: 0%"></div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-1">
+                        <span id="val-posicion">0 mm</span>
+                        <span id="val-longitud">Largo: 0 mm</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-5">
+                <div class="card-industrial text-center">
+                    <label class="text-muted small">TEMPERATURA COLA</label>
+                    <div id="val-temp" class="temp-display text-warning">0.0°C</div>
+                    <div class="text-muted">SETPOINT: 190°C</div>
+                </div>
+
+                <div class="card-industrial">
+                    <label class="text-muted small mb-2">MONITOR DE SALIDAS (I/O)</label>
+                    <div class="small">
+                        <div><span id="led-cadena" class="indicator-led bg-inactive"></span> CADENA</div>
+                        <div><span id="led-fresas" class="indicator-led bg-inactive"></span> E.V. FRESAS</div>
+                        <div><span id="led-alimen" class="indicator-led bg-inactive"></span> ALIMENTADOR</div>
+                        <div><span id="led-guillo" class="indicator-led bg-inactive"></span> GUILLOTINA</div>
+                        <div><span id="led-retest" class="indicator-led bg-inactive"></span> MOTOR RETESTE</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let estadoActual = {};
+
+        function toggleMando() {
+            const nuevoEstado = !estadoActual.tension_mando;
+            socket.emit('comando_control', { tipo: 'tension_mando', valor: nuevoEstado });
+        }
+
+        function resetEmergencia() {
+            socket.emit('comando_control', { tipo: 'reset_emergencia' });
+        }
+
+        function comando(grupo) {
+            const campo = "habil_" + grupo;
+            socket.emit('comando_control', { tipo: grupo, valor: !estadoActual[campo] });
+        }
+
+        socket.on('update_status', function (data) {
+            estadoActual = data;
+
+            // 1. Manejo de Emergencia
+            const banner = document.getElementById('banner-emergencia');
+            if (data.emergencia) {
+                banner.classList.remove('d-none');
+                document.getElementById('msg-error').innerText = data.mensaje_error;
+            } else {
+                banner.classList.add('d-none');
+            }
+
+            // 2. Tensión de Mando
+            const btnMando = document.getElementById('btn-mando');
+            const txtMando = document.getElementById('txt-mando');
+            if (data.tension_mando) {
+                btnMando.innerText = "DESCONECTAR MANDO";
+                btnMando.classList.replace('btn-outline-success', 'btn-danger');
+                txtMando.innerText = "SISTEMA LISTO (ON)";
+                txtMando.classList.replace('bg-inactive', 'bg-success');
+            } else {
+                btnMando.innerText = "CONECTAR MANDO";
+                btnMando.classList.replace('btn-danger', 'btn-outline-success');
+                txtMando.innerText = "TENSIÓN DE MANDO OFF";
+                txtMando.classList.replace('bg-success', 'bg-inactive');
+            }
+
+            // 3. Estados de Grupos (Botones Habilitadores)
+            const grupos = ['cadena', 'fresador', 'alimentador', 'retestador', 'refilador', 'calefaccion'];
+            grupos.forEach(g => {
+                const btn = document.getElementById('btn-' + g);
+                if (data['habil_' + g]) btn.classList.replace('bg-inactive', 'bg-active');
+                else btn.classList.replace('bg-active', 'bg-inactive');
+            });
+
+            // 4. Feedback LEDs (Salidas Reales)
+            document.getElementById('led-cadena').style.backgroundColor = data.act_cadena ? '#00ff00' : '#333';
+            document.getElementById('led-fresas').style.backgroundColor = (data.act_fresa1 || data.act_fresa2) ? '#00ff00' : '#333';
+            document.getElementById('led-alimen').style.backgroundColor = data.act_alimentador ? '#00ff00' : '#333';
+            document.getElementById('led-guillo').style.backgroundColor = data.act_guillotina ? '#00ff00' : '#333';
+            document.getElementById('led-retest').style.backgroundColor = data.act_retestador ? '#00ff00' : '#333';
+
+            // 5. Temperatura y Posición
+            document.getElementById('val-temp').innerText = data.temp_actual.toFixed(1) + "°C";
+            document.getElementById('val-posicion').innerText = Math.round(data.encoder_pos) + " mm";
+            document.getElementById('val-longitud').innerText = "Largo: " + Math.round(data.longitud_pieza) + " mm";
+
+            const pct = (data.encoder_pos / 2000) * 100; // 2000mm es el total de la máquina
+            document.getElementById('progreso-pieza').style.width = pct + "%";
+        });
+
+        // Reloj
+        setInterval(() => {
+            document.getElementById('reloj').innerText = new Date().toLocaleTimeString();
+        }, 1000);
+    </script>
+
+</body>
+
+</html>

@@ -1,0 +1,22 @@
+# Enchapadora de Canto Automática V2.0.0 🚀
+
+Sistema de control industrial basado en **Raspberry Pi 4** con interfaz HMI moderna para el proceso de enchapado de madera.
+
+## 🛠️ Stack Tecnológico
+* **Backend:** Python 3 + Flask.
+* **Tiempo Real:** Flask-SocketIO (WebSockets).
+* **Frontend:** HTML5, CSS3 (Modo Oscuro), Bootstrap 5.
+* **Hardware:** MCP3008 (ADC), Sensores Inductivos, Relés de estado sólido.
+
+## ⚙️ Características
+- Control de temperatura en tiempo real (Simulación PT100).
+- Seguimiento de pieza mediante **Encoder Virtual**.
+- Gestión de 6 grupos de trabajo (Fresado, Encolado, Retestado, etc.).
+- Sistema de seguridad por Paros de Emergencia (NC).
+
+## 🚀 Instalación
+1. Clonar el repositorio.
+2. Crear entorno virtual: `python3 -m venv venv`.
+3. Activar: `source venv/bin/activate`.
+4. Instalar dependencias: `pip install -r requirements.txt`.
+5. Ejecutar: `python3 app.py`.
