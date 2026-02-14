@@ -41,7 +41,6 @@
 
         .text-label {
             color: #b0b0b0;
-            /* Color gris claro para mayor contraste */
             font-size: 0.85rem;
             font-weight: 500;
             text-transform: uppercase;
@@ -70,6 +69,12 @@
             border: 1px solid #444;
         }
 
+        .bg-ocupada {
+            background-color: #ff9900 !important;
+            color: #000;
+            animation: pulse 2s infinite;
+        }
+
         .bg-danger-flash {
             background-color: #ff0000;
             color: white;
@@ -90,6 +95,20 @@
             }
         }
 
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
         .temp-display {
             font-size: 3rem;
             font-family: 'Orbitron', sans-serif;
@@ -103,6 +122,7 @@
             display: inline-block;
             margin-right: 5px;
             vertical-align: middle;
+            transition: background-color 0.2s;
         }
 
         .io-text {
@@ -125,6 +145,7 @@
                 <div id="reloj" class="status-display">00:00:00</div>
             </div>
             <div class="col-4 text-end">
+                <span id="badge-ocupada" class="badge bg-inactive me-2">LIBRE</span>
                 <button id="btn-mando" class="btn btn-outline-success" onclick="toggleMando()">CONECTAR MANDO</button>
             </div>
         </div>
@@ -203,8 +224,10 @@
                             </div>
                             <div class="io-text"><span id="led-fresas-motor" class="indicator-led bg-inactive"></span>
                                 M. FRESA</div>
-                            <div class="io-text"><span id="led-fresas-ev" class="indicator-led bg-inactive"></span> EV
-                                FRESA</div>
+                            <div class="io-text"><span id="led-fresas-ev1" class="indicator-led bg-inactive"></span> EV
+                                FRESA 1</div>
+                            <div class="io-text"><span id="led-fresas-ev2" class="indicator-led bg-inactive"></span> EV
+                                FRESA 2</div>
                             <div class="io-text"><span id="led-alimen" class="indicator-led bg-inactive"></span>
                                 ALIMENT.</div>
                             <div class="io-text"><span id="led-guillo" class="indicator-led bg-inactive"></span>
@@ -265,7 +288,18 @@
                 txtMando.classList.replace('bg-success', 'bg-inactive');
             }
 
-            // 3. Botones Habilitadores
+            // 3. Estado Máquina Ocupada
+            const badgeOcupada = document.getElementById('badge-ocupada');
+            if (data.maquina_ocupada) {
+                badgeOcupada.innerText = "MÁQUINA OCUPADA";
+                badgeOcupada.classList.replace('bg-inactive', 'bg-ocupada');
+            } else {
+                badgeOcupada.innerText = "LIBRE";
+                badgeOcupada.classList.remove('bg-ocupada');
+                badgeOcupada.classList.add('bg-inactive');
+            }
+
+            // 4. Botones Habilitadores
             const grupos = ['cadena', 'fresador', 'alimentador', 'retestador', 'refilador', 'calefaccion'];
             grupos.forEach(g => {
                 const btn = document.getElementById('btn-' + g);
@@ -273,32 +307,34 @@
                 else btn.classList.replace('bg-active', 'bg-inactive');
             });
 
-            // 4. MONITOR ENTRADAS (0=Activo, 1=Reposo/Abierto)
-            // Sensor (0 es activo -> Verde)
+            // 5. MONITOR ENTRADAS (0=Activo->Verde, 1=Reposo/Abierto)
             document.getElementById('in-sensor').style.backgroundColor = (data.in_sensor_entrada === 0) ? '#00ff00' : '#333';
-            // Paros (0 es emergencia -> Rojo, 1 es OK -> Verde)
             document.getElementById('in-paro1').style.backgroundColor = (data.in_paro_entrada === 1) ? '#00ff00' : '#ff0000';
             document.getElementById('in-paro2').style.backgroundColor = (data.in_paro_salida === 1) ? '#00ff00' : '#ff0000';
 
-            // 5. MONITOR SALIDAS
+            // 6. MONITOR SALIDAS (Ahora sí se iluminan)
             document.getElementById('led-cadena').style.backgroundColor = data.act_cadena ? '#00ff00' : '#333';
             document.getElementById('led-fresas-motor').style.backgroundColor = data.act_fresador ? '#00ff00' : '#333';
-            document.getElementById('led-fresas-ev').style.backgroundColor = (data.act_fresa1 || data.act_fresa2) ? '#00ff00' : '#333';
+
+            // EVs Fresa independientes
+            document.getElementById('led-fresas-ev1').style.backgroundColor = data.act_fresa1 ? '#00ff00' : '#333';
+            document.getElementById('led-fresas-ev2').style.backgroundColor = data.act_fresa2 ? '#00ff00' : '#333';
+
             document.getElementById('led-alimen').style.backgroundColor = data.act_alimentador ? '#00ff00' : '#333';
             document.getElementById('led-guillo').style.backgroundColor = data.act_guillotina ? '#00ff00' : '#333';
             document.getElementById('led-retest').style.backgroundColor = data.act_retestador ? '#00ff00' : '#333';
             document.getElementById('led-refil').style.backgroundColor = data.act_refilador ? '#00ff00' : '#333';
 
-            // 6. Valores Numéricos
+            // 7. Valores
             document.getElementById('val-temp').innerText = data.temp_actual.toFixed(1) + "°C";
             document.getElementById('val-posicion').innerText = Math.round(data.encoder_pos) + " mm";
             document.getElementById('val-longitud').innerText = "Largo: " + Math.round(data.longitud_pieza) + " mm";
 
-            const pct = (data.encoder_pos / 2000) * 100;
+            // 1200mm es la máquina, pero visualmente damos margen
+            const pct = (data.encoder_pos / 1500) * 100;
             document.getElementById('progreso-pieza').style.width = pct + "%";
         });
 
-        // Reloj
         setInterval(() => {
             document.getElementById('reloj').innerText = new Date().toLocaleTimeString();
         }, 1000);
