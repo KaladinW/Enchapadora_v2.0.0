@@ -20,11 +20,11 @@ estado_maquina = {
     "tension_mando": False,
     "emergencia": False,
     "mensaje_error": "",
-    "maquina_ocupada": False,  # Nuevo estado
+    "maquina_ocupada": False,
 
     # Tracking
     "encoder_pos": 0.0,
-    "pieza_detectada": False,  # Estado sensor físico
+    "pieza_detectada": False,
     "longitud_pieza": 0.0,
     "tracking_activo": False,
 
@@ -37,8 +37,9 @@ estado_maquina = {
     "habil_refilador": False,
 
     # Estado Físico Salidas (Para feedback visual HMI)
-    "act_calefaccion": False,  # Indica si PWM > 0
+    "act_calefaccion": False,
     "temp_actual": 0.0,
+    "temp_objetivo": config.TEMP_OBJETIVO,
     "act_cadena": False,
     "act_fresador": False,
     "act_fresa1": False,
@@ -71,16 +72,15 @@ flags = {
 pid_state = {
     "error_prev": 0,
     "integral": 0,
-    "kp": 10.0,  # Ganancia Proporcional
-    "ki": 0.1,  # Ganancia Integral
-    "kd": 5.0   # Ganancia Derivativa
+    "kp": 10.0,
+    "ki": 0.1,
+    "kd": 5.0
 }
 
 # --- CONFIGURACIÓN GPIO ---
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
-# Configurar Salidas
 salidas = [
     config.PIN_CADENA, config.PIN_MOTOR_FRESADOR, config.PIN_EV_FRESA_1,
     config.PIN_EV_FRESA_2, config.PIN_SSR_ENCOLADOR, config.PIN_EV_ALIMENTADOR,
@@ -89,20 +89,16 @@ salidas = [
 for pin in salidas:
     GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
 
-# Configurar Entradas
 entradas = [config.PIN_SENSOR_ENTRADA,
             config.PIN_PARO_ENTRADA, config.PIN_PARO_SALIDA]
 for pin in entradas:
     GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-# Configurar SPI
 GPIO.setup(config.SPI_MOSI, GPIO.OUT)
 GPIO.setup(config.SPI_MISO, GPIO.IN)
 GPIO.setup(config.SPI_CLK, GPIO.OUT)
 GPIO.setup(config.SPI_CS, GPIO.OUT)
 
-# Configurar PWM para Calefacción (GPIO 18)
-# 10 Hz para visualización LED
 pwm_calefaccion = GPIO.PWM(config.PIN_SSR_ENCOLADOR, 10)
 pwm_calefaccion.start(0)
 
@@ -149,19 +145,16 @@ def escribir_salida(pin, estado, clave_diccionario=None):
 
 
 def calcular_pid(temp_actual, temp_objetivo):
-    """Calcula el ciclo de trabajo PWM (0-100%)"""
     error = temp_objetivo - temp_actual
 
     pid_state["integral"] += error * config.TIEMPO_CICLO
     derivada = (error - pid_state["error_prev"]) / config.TIEMPO_CICLO
 
-    # Salida PID
     salida = (pid_state["kp"] * error) + (pid_state["ki"]
                                           * pid_state["integral"]) + (pid_state["kd"] * derivada)
 
     pid_state["error_prev"] = error
 
-    # Limitar salida entre 0 y 100
     if salida > 100:
         salida = 100
     if salida < 0:
@@ -188,7 +181,7 @@ def verificar_emergencia():
 
 
 def control_loop():
-    print("--- PLC ENCHAPADORA V2.1.0 INICIADO ---")
+    print("--- PLC ENCHAPADORA V2.1.1 INICIADO ---")
 
     while True:
         start_time = time.time()
@@ -200,12 +193,11 @@ def control_loop():
 
         # 2. VERIFICAR SEGURIDAD
         if verificar_emergencia():
-            pwm_calefaccion.ChangeDutyCycle(0)  # Apagar PWM
+            pwm_calefaccion.ChangeDutyCycle(0)
             for pin in salidas:
-                if pin != config.PIN_SSR_ENCOLADOR:  # SSR ya manejado por PWM
+                if pin != config.PIN_SSR_ENCOLADOR:
                     GPIO.output(pin, GPIO.LOW)
 
-            # Reset visuales
             estado_maquina["act_cadena"] = False
             estado_maquina["act_fresador"] = False
             estado_maquina["act_fresa1"] = False
@@ -239,8 +231,7 @@ def control_loop():
                 duty = calcular_pid(
                     estado_maquina["temp_actual"], config.TEMP_OBJETIVO)
                 pwm_calefaccion.ChangeDutyCycle(duty)
-                estado_maquina["act_calefaccion"] = (
-                    duty > 5)  # Visualmente activo si > 5%
+                estado_maquina["act_calefaccion"] = (duty > 5)
             else:
                 pwm_calefaccion.ChangeDutyCycle(0)
                 estado_maquina["act_calefaccion"] = False
@@ -263,23 +254,22 @@ def control_loop():
             sensor_in = GPIO.input(config.PIN_SENSOR_ENTRADA)
             estado_maquina["in_sensor_entrada"] = sensor_in
 
-            # --- DETECCIÓN INICIO ---
-            if sensor_in == 0 and not estado_maquina["pieza_detectada"]:
+            # --- DETECCIÓN INICIO (LOGICA CORREGIDA: 1 = Pulsado/Detectando) ---
+            if sensor_in == 1 and not estado_maquina["pieza_detectada"]:
                 estado_maquina["pieza_detectada"] = True
                 estado_maquina["tracking_activo"] = True
                 estado_maquina["maquina_ocupada"] = True
                 estado_maquina["encoder_pos"] = 0
                 estado_maquina["longitud_pieza"] = 0
 
-                # Reset Flags Ciclo
                 flags["alimentador_activo"] = False
                 flags["guillotina_activa"] = False
                 flags["retestador_delantero_hecho"] = False
                 flags["retestador_trasero_hecho"] = False
                 print(">> PIEZA INGRESANDO")
 
-            # --- DETECCIÓN FIN PIEZA ---
-            if sensor_in == 1 and estado_maquina["pieza_detectada"]:
+            # --- DETECCIÓN FIN PIEZA (LOGICA CORREGIDA: 0 = Soltado/Terminó) ---
+            if sensor_in == 0 and estado_maquina["pieza_detectada"]:
                 estado_maquina["pieza_detectada"] = False
                 print(
                     f">> PIEZA COMPLETA. L={estado_maquina['longitud_pieza']:.1f}")
@@ -289,30 +279,19 @@ def control_loop():
                 avance = config.VELOCIDAD_MM_S * config.TIEMPO_CICLO
                 estado_maquina["encoder_pos"] += avance
 
-                # Solo sumar longitud si el sensor sigue presionado
                 if estado_maquina["pieza_detectada"]:
                     estado_maquina["longitud_pieza"] += avance
 
                 pos = estado_maquina["encoder_pos"]
                 longitud = estado_maquina["longitud_pieza"]
 
-                # --- GRUPO FRESADOR (Lógica Corregida) ---
+                # --- GRUPO FRESADOR ---
                 if estado_maquina["habil_fresador"]:
-                    # La referencia es el final de la pieza
-                    # Si aun detectamos pieza, el final "se mueve", usamos predicción temporal o esperamos
-                    # Usaremos lógica relativa al final teórico calculado dinámicamente
-
                     pos_final_pieza_en_grupo = config.POS_FRESADOR + longitud
 
-                    # GPIO 16 (Fresa 2): Activa por defecto. Se apaga faltando 30mm para terminar.
-                    # Se reactiva cuando termina.
-                    # Rango de APAGADO: [Fin - 30mm, Fin]
-
-                    # Solo aplicamos lógica fina cuando sabemos el largo total
                     if not estado_maquina["pieza_detectada"]:
                         inicio_apagado_16 = pos_final_pieza_en_grupo - 30
                         fin_apagado_16 = pos_final_pieza_en_grupo
-
                         if pos >= inicio_apagado_16 and pos <= fin_apagado_16:
                             escribir_salida(
                                 config.PIN_EV_FRESA_2, False, "act_fresa2")
@@ -320,18 +299,12 @@ def control_loop():
                             escribir_salida(
                                 config.PIN_EV_FRESA_2, True, "act_fresa2")
                     else:
-                        # Siempre ON mientras entra
                         escribir_salida(config.PIN_EV_FRESA_2,
                                         True, "act_fresa2")
-
-                    # GPIO 12 (Fresa 1): Normalmente OFF. Activa faltando 40mm para terminar.
-                    # Se desactiva cuando termina.
-                    # Rango de ENCENDIDO: [Fin - 40mm, Fin]
 
                     if not estado_maquina["pieza_detectada"]:
                         inicio_encendido_12 = pos_final_pieza_en_grupo - 40
                         fin_encendido_12 = pos_final_pieza_en_grupo
-
                         if pos >= inicio_encendido_12 and pos <= fin_encendido_12:
                             escribir_salida(
                                 config.PIN_EV_FRESA_1, True, "act_fresa1")
@@ -346,27 +319,23 @@ def control_loop():
                     escribir_salida(config.PIN_EV_FRESA_1, False, "act_fresa1")
                     escribir_salida(config.PIN_EV_FRESA_2, False, "act_fresa2")
 
-                # --- GRUPO ALIMENTADOR (GPIO 20) ---
+                # --- GRUPO ALIMENTADOR ---
                 if estado_maquina["habil_alimentador"]:
-                    # Se activa al llegar al grupo
                     if pos >= config.POS_ALIMENTADOR and not flags["alimentador_activo"] and pos < (config.POS_ALIMENTADOR + 100):
                         flags["alimentador_activo"] = True
                         timers["alimentador_inicio"] = time.time()
                         escribir_salida(config.PIN_EV_ALIMENTADOR,
                                         True, "act_alimentador")
 
-                    # Temporizador 4 segundos
                     if flags["alimentador_activo"]:
                         if (time.time() - timers["alimentador_inicio"]) > 4.0:
                             escribir_salida(
                                 config.PIN_EV_ALIMENTADOR, False, "act_alimentador")
-                            # No reseteamos flag aun para que no dispare de nuevo en esta pieza
 
-                # --- GRUPO GUILLOTINA (GPIO 21) ---
+                # --- GRUPO GUILLOTINA ---
                 if estado_maquina["habil_alimentador"]:
-                    # Se activa cuando la pieza TERMINA de pasar (Posicion == Grupo + Longitud)
                     if not estado_maquina["pieza_detectada"]:
-                        pos_corte = config.POS_ALIMENTADOR + longitud  # Misma posición física ref
+                        pos_corte = config.POS_ALIMENTADOR + longitud
 
                         if pos >= pos_corte and not flags["guillotina_activa"]:
                             flags["guillotina_activa"] = True
@@ -374,7 +343,6 @@ def control_loop():
                             escribir_salida(
                                 config.PIN_EV_GUILLOTINA, True, "act_guillotina")
 
-                        # Temporizador 3 segundos
                         if flags["guillotina_activa"]:
                             if (time.time() - timers["guillotina_inicio"]) > 3.0:
                                 escribir_salida(
@@ -382,8 +350,6 @@ def control_loop():
 
                 # --- GRUPO RETESTADOR ---
                 if estado_maquina["habil_retestador"]:
-                    # Lógica simplificada para simulación visual
-                    # Delantero
                     if pos >= config.POS_RETESTADOR and not flags["retestador_delantero_hecho"]:
                         estado_maquina["retestador_bajando"] = True
                         flags["retestador_delantero_hecho"] = True
@@ -391,7 +357,6 @@ def control_loop():
                     if pos > (config.POS_RETESTADOR + 150):
                         estado_maquina["retestador_bajando"] = False
 
-                    # Trasero
                     if not estado_maquina["pieza_detectada"] and not flags["retestador_trasero_hecho"]:
                         pos_trasero = config.POS_RETESTADOR + longitud - 10
                         if pos >= pos_trasero:
@@ -399,8 +364,7 @@ def control_loop():
                             flags["retestador_trasero_hecho"] = True
 
                 # --- CONTROL DE SALIDA DE MÁQUINA ---
-                # Si la posición > longitud maquina + longitud pieza, salió
-                limite_salida = config.LONGITUD_MAQUINA + longitud + 200  # +200 margen
+                limite_salida = config.LONGITUD_MAQUINA + longitud + 200
                 if pos > limite_salida:
                     estado_maquina["tracking_activo"] = False
                     estado_maquina["maquina_ocupada"] = False

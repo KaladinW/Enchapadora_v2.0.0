@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HMI Enchapadora V2.1.0</title>
+    <title>HMI Enchapadora V2.1.1</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;500&display=swap"
         rel="stylesheet">
@@ -138,7 +138,7 @@
     <div class="container-fluid">
         <div class="row header-panel align-items-center">
             <div class="col-4">
-                <span class="text-white small">SISTEMA ENCHAPADORA V2.1.0</span><br>
+                <span class="text-white small">SISTEMA ENCHAPADORA V2.1.1</span><br>
                 <span id="txt-mando" class="badge bg-inactive">TENSIÓN DE MANDO OFF</span>
             </div>
             <div class="col-4 text-center">
@@ -203,7 +203,7 @@
                 <div class="card-industrial text-center">
                     <label class="text-label">TEMPERATURA COLA</label>
                     <div id="val-temp" class="temp-display text-warning">0.0°C</div>
-                    <div class="text-white">SETPOINT: 190°C</div>
+                    <div class="text-white">SETPOINT: 180°C</div>
                 </div>
 
                 <div class="card-industrial">
@@ -243,6 +243,12 @@
         </div>
     </div>
 
+    <div id="banner-temp-baja" class="fixed-bottom bg-warning text-dark text-center py-1 fw-bold d-none"
+        style="opacity: 0.9; z-index: 1050; animation: pulse 2s infinite;">
+        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+        Temperatura de aplicación baja, por favor espere...
+    </div>
+
     <script>
         const socket = io();
         let estadoActual = {};
@@ -259,6 +265,15 @@
         function comando(grupo) {
             const campo = "habil_" + grupo;
             socket.emit('comando_control', { tipo: grupo, valor: !estadoActual[campo] });
+        }
+
+        function updateLed(id, isActive) {
+            const element = document.getElementById(id);
+            if (isActive) {
+                element.classList.replace('bg-inactive', 'bg-active');
+            } else {
+                element.classList.replace('bg-active', 'bg-inactive');
+            }
         }
 
         socket.on('update_status', function (data) {
@@ -299,7 +314,15 @@
                 badgeOcupada.classList.add('bg-inactive');
             }
 
-            // 4. Botones Habilitadores
+            // 4. Advertencia de Temperatura (NO invasivo)
+            const bannerTemp = document.getElementById('banner-temp-baja');
+            if (data.habil_calefaccion && data.temp_actual < data.temp_objetivo && !data.emergencia) {
+                bannerTemp.classList.remove('d-none');
+            } else {
+                bannerTemp.classList.add('d-none');
+            }
+
+            // 5. Botones Habilitadores
             const grupos = ['cadena', 'fresador', 'alimentador', 'retestador', 'refilador', 'calefaccion'];
             grupos.forEach(g => {
                 const btn = document.getElementById('btn-' + g);
@@ -307,30 +330,26 @@
                 else btn.classList.replace('bg-active', 'bg-inactive');
             });
 
-            // 5. MONITOR ENTRADAS (0=Activo->Verde, 1=Reposo/Abierto)
-            document.getElementById('in-sensor').style.backgroundColor = (data.in_sensor_entrada === 0) ? '#00ff00' : '#333';
-            document.getElementById('in-paro1').style.backgroundColor = (data.in_paro_entrada === 1) ? '#00ff00' : '#ff0000';
-            document.getElementById('in-paro2').style.backgroundColor = (data.in_paro_salida === 1) ? '#00ff00' : '#ff0000';
+            // 6. MONITOR ENTRADAS (1=Activo por lógica de pulsador invertido, Paros: 1=OK)
+            updateLed('in-sensor', data.in_sensor_entrada === 1);
+            updateLed('in-paro1', data.in_paro_entrada === 1);
+            updateLed('in-paro2', data.in_paro_salida === 1);
 
-            // 6. MONITOR SALIDAS (Ahora sí se iluminan)
-            document.getElementById('led-cadena').style.backgroundColor = data.act_cadena ? '#00ff00' : '#333';
-            document.getElementById('led-fresas-motor').style.backgroundColor = data.act_fresador ? '#00ff00' : '#333';
+            // 7. MONITOR SALIDAS (Usando helper para inyectar CSS correctamente)
+            updateLed('led-cadena', data.act_cadena);
+            updateLed('led-fresas-motor', data.act_fresador);
+            updateLed('led-fresas-ev1', data.act_fresa1);
+            updateLed('led-fresas-ev2', data.act_fresa2);
+            updateLed('led-alimen', data.act_alimentador);
+            updateLed('led-guillo', data.act_guillotina);
+            updateLed('led-retest', data.act_retestador);
+            updateLed('led-refil', data.act_refilador);
 
-            // EVs Fresa independientes
-            document.getElementById('led-fresas-ev1').style.backgroundColor = data.act_fresa1 ? '#00ff00' : '#333';
-            document.getElementById('led-fresas-ev2').style.backgroundColor = data.act_fresa2 ? '#00ff00' : '#333';
-
-            document.getElementById('led-alimen').style.backgroundColor = data.act_alimentador ? '#00ff00' : '#333';
-            document.getElementById('led-guillo').style.backgroundColor = data.act_guillotina ? '#00ff00' : '#333';
-            document.getElementById('led-retest').style.backgroundColor = data.act_retestador ? '#00ff00' : '#333';
-            document.getElementById('led-refil').style.backgroundColor = data.act_refilador ? '#00ff00' : '#333';
-
-            // 7. Valores
+            // 8. Valores
             document.getElementById('val-temp').innerText = data.temp_actual.toFixed(1) + "°C";
             document.getElementById('val-posicion').innerText = Math.round(data.encoder_pos) + " mm";
             document.getElementById('val-longitud').innerText = "Largo: " + Math.round(data.longitud_pieza) + " mm";
 
-            // 1200mm es la máquina, pero visualmente damos margen
             const pct = (data.encoder_pos / 1500) * 100;
             document.getElementById('progreso-pieza').style.width = pct + "%";
         });

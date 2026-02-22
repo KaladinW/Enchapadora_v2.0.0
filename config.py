@@ -39,4 +39,4 @@ PIN_MOTOR_REFILADOR = 26     # Contactor Motores Refilador
 
 # --- PARAMETROS DE CONTROL ---
 TIEMPO_CICLO = 0.05  # 50ms
-TEMP_OBJETIVO = 190.0  # Grados Celsius
+TEMP_OBJETIVO = 180.0  # Grados Celsius (Actualizado)
